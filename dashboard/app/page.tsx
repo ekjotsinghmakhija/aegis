@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 
 interface TelemetryPayload {
@@ -18,8 +18,12 @@ export default function Dashboard() {
   const [history, setHistory] = useState<ChartData[]>([]);
   const [status, setStatus] = useState("Connecting...");
 
+  // 1. Store the WebSocket in a Ref so we can send messages from button clicks
+  const wsRef = useRef<WebSocket | null>(null);
+
   useEffect(() => {
     const ws = new WebSocket("ws://localhost:8080/ws");
+    wsRef.current = ws; // Save to Ref
 
     ws.onopen = () => setStatus("Connected (Live)");
     ws.onclose = () => setStatus("Disconnected - Retrying...");
@@ -39,13 +43,24 @@ export default function Dashboard() {
     return () => ws.close();
   }, []);
 
+  // 2. The interactive Kill command function
+  const handleKillProcess = (pid: number, name: string) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      if (window.confirm(`WARNING: Are you sure you want to kill ${name} (PID: ${pid})?`)) {
+        wsRef.current.send(JSON.stringify({ action: "kill_process", pid: pid }));
+      }
+    } else {
+      alert("Cannot send command: WebSocket is not connected.");
+    }
+  };
+
   return (
     <main className="min-h-screen bg-neutral-950 text-neutral-50 p-8 font-sans">
       <div className="max-w-5xl mx-auto">
         <header className="flex justify-between items-center mb-12 border-b border-neutral-800 pb-6">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Aegis Control Plane</h1>
-            <p className="text-neutral-400 mt-1">Real-time telemetry stream</p>
+            <p className="text-neutral-400 mt-1">Real-time interactive telemetry</p>
           </div>
           <div className={`px-3 py-1 rounded-full text-sm font-medium ${status.includes("Live") ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-red-500/10 text-red-400 border border-red-500/20"}`}>
             {status}
@@ -96,7 +111,7 @@ export default function Dashboard() {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Processes Table */}
+              {/* Processes Table with Actions */}
               <div className="bg-neutral-900 border border-neutral-800 rounded-xl shadow-lg overflow-hidden">
                 <div className="p-6 border-b border-neutral-800">
                   <h2 className="text-sm font-semibold text-neutral-400 uppercase tracking-wider">Top Processes</h2>
@@ -108,6 +123,7 @@ export default function Dashboard() {
                         <th className="p-4 font-medium">PID</th>
                         <th className="p-4 font-medium">Name</th>
                         <th className="p-4 font-medium text-right">CPU %</th>
+                        <th className="p-4 font-medium text-right">Action</th>
                       </tr>
                     </thead>
                     <tbody className="text-sm divide-y divide-neutral-800/50">
@@ -116,6 +132,15 @@ export default function Dashboard() {
                           <td className="p-4 text-neutral-500">{proc.pid}</td>
                           <td className="p-4 font-medium text-neutral-200 truncate max-w-[150px]">{proc.name}</td>
                           <td className="p-4 text-right font-mono text-blue-400">{proc.cpu_percent.toFixed(1)}%</td>
+                          <td className="p-4 text-right">
+                            {/* 3. The Kill Switch */}
+                            <button
+                              onClick={() => handleKillProcess(proc.pid, proc.name)}
+                              className="bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white px-3 py-1 rounded transition-colors text-xs font-semibold"
+                            >
+                              KILL
+                            </button>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
