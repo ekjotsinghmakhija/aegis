@@ -6,6 +6,7 @@ require (
 	github.com/docker/docker v26.1.5+incompatible
 	github.com/gorilla/websocket v1.5.3
 	github.com/jaypipes/ghw v0.23.0
+	github.com/mattn/go-sqlite3 v1.14.34
 	github.com/shirou/gopsutil/v3 v3.24.5
 )
 

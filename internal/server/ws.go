@@ -1,103 +1,56 @@
 package server
 
 import (
+	"database/sql"
+	"embed"
 	"encoding/json"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
-	"strings" // Added missing import
+	"strings"
 	"time"
 
 	"github.com/ekjotsinghmakhija/aegis/internal/scraper"
 	"github.com/gorilla/websocket"
+	_ "github.com/mattn/go-sqlite3"
 )
 
+// This directive embeds the static dashboard files into the binary
+//go:embed all:dashboard/out
+var staticFiles embed.FS
+
 var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {
-		return true // Allow our Next.js dashboard to connect
-	},
+	CheckOrigin: func(r *http.Request) bool { return true },
 }
 
-// ClientCommand represents incoming instructions from the UI
-type ClientCommand struct {
-	Action      string `json:"action"`
-	PID         int    `json:"pid,omitempty"`
-	ContainerID string `json:"container_id,omitempty"`
-}
+func StartServer(engine *scraper.Engine) {
+	db, _ := sql.Open("sqlite3", "./aegis_history.db")
+	db.Exec("CREATE TABLE IF NOT EXISTS metrics (ts DATETIME, cpu REAL, mem INTEGER)")
 
-func HandleConnections(w http.ResponseWriter, r *http.Request) {
-	ws, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Printf("WebSocket Upgrade Error: %v", err)
-		return
-	}
-	defer ws.Close()
+	// 1. Prepare Embedded Files
+	public, _ := fs.Sub(staticFiles, "dashboard/out")
+	fileServer := http.FileServer(http.FS(public))
 
-	log.Printf("New client connected from %s", r.RemoteAddr)
-
-	// --- THE READ PUMP (Listens for UI commands) ---
-	go func() {
-		for {
-			_, message, err := ws.ReadMessage()
-			if err != nil {
-				break // Exit if client disconnects
-			}
-
-			var cmd ClientCommand
-			if err := json.Unmarshal(message, &cmd); err == nil {
-				// Handle the Kill Process command
-				if cmd.Action == "kill_process" && cmd.PID > 0 {
-					log.Printf("Command Received: Kill PID %d", cmd.PID)
-					killProcess(cmd.PID)
-				}
-				// Handle Docker Containers
-				if strings.HasPrefix(cmd.Action, "docker_") && cmd.ContainerID != "" {
-					log.Printf("Command Received: %s on Container %s", cmd.Action, cmd.ContainerID)
-					// Strip the "docker_" prefix to pass just "start", "stop", or "restart"
-					scraper.PerformDockerAction(cmd.ContainerID, cmd.Action[7:])
-				}
-			}
+	// 2. Telemetry WebSocket
+	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("token") != os.Getenv("AEGIS_TOKEN") {
+			http.Error(w, "Unauthorized", 401); return
 		}
-	}()
+		ws, _ := upgrader.Upgrade(w, r, nil)
+		defer ws.Close()
 
-	// --- THE WRITE PUMP (Streams telemetry) ---
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			telemetry := scraper.GetTelemetry()
-			err := ws.WriteJSON(telemetry)
-			if err != nil {
-				log.Printf("Client disconnected: %s", r.RemoteAddr)
-				return
-			}
+		ticker := time.NewTicker(1 * time.Second)
+		for range ticker.C {
+			payload := engine.RunCycle(800 * time.Millisecond)
+			db.Exec("INSERT INTO metrics VALUES (?, ?, ?)", time.Now(), payload.CPU.GlobalUsagePercent, payload.Memory.UsedMB)
+			ws.WriteJSON(payload)
 		}
-	}
-}
+	})
 
-// killProcess interfaces with the OS to terminate a task
-func killProcess(pid int) {
-	proc, err := os.FindProcess(pid)
-	if err != nil {
-		log.Printf("Failed to find process %d: %v", pid, err)
-		return
-	}
+	// 3. Serve the GUI at the root
+	http.Handle("/", fileServer)
 
-	// Issue the kill signal to the OS
-	err = proc.Kill()
-	if err != nil {
-		log.Printf("Failed to kill process %d (Check Permissions): %v", pid, err)
-	} else {
-		log.Printf("Successfully terminated process %d", pid)
-	}
-}
-
-func StartServer() {
-	http.HandleFunc("/ws", HandleConnections)
-	log.Println("Aegis WebSocket Daemon running on ws://localhost:8080/ws")
-	if err := http.ListenAndServe(":8080", nil); err != nil {
-		log.Fatalf("Fatal Error: WebSocket Server failed to start: %v", err)
-	}
+	log.Println("Aegis Dashboard (GUI) available at http://localhost:8080")
+	http.ListenAndServe(":8080", nil)
 }

@@ -1,0 +1,14 @@
+# Aegis local data
+aegis_history.db
+aegis_history.db-journal
+aegis_history.db-wal
+aegis_history.db-shm
+
+# Binaries and OS files
+aegis
+.DS_Store
+
+# Frontend dependencies and build output
+dashboard/node_modules/
+dashboard/out/
+dashboard/.next/

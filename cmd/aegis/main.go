@@ -1,9 +1,7 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/ekjotsinghmakhija/aegis/internal/scraper"
@@ -11,35 +9,31 @@ import (
 )
 
 func main() {
-	fmt.Println("Initializing Aegis Agent v1.0.0...")
+	engine := scraper.NewEngine()
 
-	// 1. Start the WebSocket server in a background Goroutine
-	go server.StartServer()
+	// Register modular plugins
+	engine.Register(&scraper.HostPlugin{})
+	engine.Register(&scraper.CPUScraper{})
+	engine.Register(&scraper.MemPlugin{})
+	engine.Register(&scraper.NetPlugin{})
+	engine.Register(&scraper.ProcessPlugin{})
+	engine.Register(&scraper.DockerPlugin{}) //
 
-	// Give the server a millisecond to bind to the port before printing
-	time.Sleep(100 * time.Millisecond)
+	// Start GUI server in a background routine
+	go server.StartServer(engine)
 
-	// 2. Start the Terminal UI ticker
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
+	// --- TERMINAL FORMAT OUTPUT ---
+	fmt.Println("\033[H\033[2J") // Clear screen
+	fmt.Println("Aegis Terminal Monitor v3.0 | GUI at http://localhost:8080")
+	fmt.Println("-------------------------------------------------------------")
 
 	for {
-		select {
-		case <-ticker.C:
-			telemetryData := scraper.GetTelemetry()
-			jsonData, err := json.MarshalIndent(telemetryData, "", "  ")
-			if err != nil {
-				log.Printf("Error: Failed to marshal telemetry payload: %v", err)
-				continue
-			}
-
-			// Clear terminal and print
-			fmt.Print("\033[H\033[2J")
-			fmt.Println("=== Aegis Agent Live Telemetry ===")
-			fmt.Println("-> Local WebSocket Stream: ws://localhost:8080/ws")
-			fmt.Println("-> Press Ctrl+C to stop")
-			fmt.Println("==================================")
-			fmt.Println(string(jsonData))
-		}
+		data := engine.RunCycle(500 * time.Millisecond)
+		fmt.Printf("\rCPU: %.1f%% | RAM: %dMB / %dMB | Host: %s ",
+			data.CPU.GlobalUsagePercent,
+			data.Memory.UsedMB,
+			data.Memory.TotalMB,
+			data.Metadata.Hostname)
+		time.Sleep(1 * time.Second)
 	}
 }

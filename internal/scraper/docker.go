@@ -9,18 +9,21 @@ import (
 	"github.com/ekjotsinghmakhija/aegis/internal/models"
 )
 
-func GetDockerContainers() []models.Container {
+type DockerPlugin struct{}
+
+func (p *DockerPlugin) Name() string { return "docker" }
+
+func (p *DockerPlugin) Collect(ctx context.Context, _ *Registry) (interface{}, error) {
 	containerList := make([]models.Container, 0)
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
-		return containerList
+		return containerList, nil
 	}
 	defer cli.Close()
 
-	ctx := context.Background()
 	containers, err := cli.ContainerList(ctx, container.ListOptions{All: true})
 	if err != nil {
-		return containerList
+		return containerList, nil
 	}
 
 	for _, c := range containers {
@@ -34,7 +37,7 @@ func GetDockerContainers() []models.Container {
 			Status: c.State,
 		})
 	}
-	return containerList
+	return containerList, nil
 }
 
 func PerformDockerAction(containerID string, action string) {
