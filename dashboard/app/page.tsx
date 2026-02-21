@@ -1,45 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-} from "recharts";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 
-// 1. Upgraded Schema Contract to include Top Processes
 interface TelemetryPayload {
-  metadata: {
-    hostname: string;
-    os_type: string;
-    uptime_seconds: number;
-  };
-  cpu: {
-    global_usage_percent: number;
-    temperature_c: number;
-  };
-  memory: {
-    total_mb: number;
-    used_mb: number;
-    available_mb: number;
-  };
-  top_processes: {
-    pid: number;
-    name: string;
-    user: string;
-    cpu_percent: number;
-    memory_mb: number;
-  }[];
+  metadata: { hostname: string; os_type: string; uptime_seconds: number; };
+  cpu: { global_usage_percent: number; temperature_c: number; };
+  memory: { total_mb: number; used_mb: number; available_mb: number; };
+  top_processes: { pid: number; name: string; user: string; cpu_percent: number; memory_mb: number; }[];
+  containers: { id: string; name: string; status: string; cpu_percent: number; memory_mb: number; }[];
 }
 
-interface ChartData {
-  time: string;
-  cpu: number;
-}
+interface ChartData { time: string; cpu: number; }
 
 export default function Dashboard() {
   const [data, setData] = useState<TelemetryPayload | null>(null);
@@ -59,12 +31,7 @@ export default function Dashboard() {
       setHistory((prev) => {
         const now = new Date();
         const timeString = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
-
-        const newPoint = {
-          time: timeString,
-          cpu: Number(payload.cpu.global_usage_percent.toFixed(1)),
-        };
-
+        const newPoint = { time: timeString, cpu: Number(payload.cpu.global_usage_percent.toFixed(1)) };
         return [...prev, newPoint].slice(-60);
       });
     };
@@ -75,7 +42,6 @@ export default function Dashboard() {
   return (
     <main className="min-h-screen bg-neutral-950 text-neutral-50 p-8 font-sans">
       <div className="max-w-5xl mx-auto">
-        {/* Header */}
         <header className="flex justify-between items-center mb-12 border-b border-neutral-800 pb-6">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Aegis Control Plane</h1>
@@ -88,7 +54,6 @@ export default function Dashboard() {
 
         {data ? (
           <div className="flex flex-col gap-6">
-            {/* Top Cards Grid */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-6 shadow-lg">
                 <h2 className="text-sm font-semibold text-neutral-400 uppercase tracking-wider mb-4">Host Identity</h2>
@@ -115,7 +80,6 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* The CPU History Chart */}
             <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-6 shadow-lg">
               <h2 className="text-sm font-semibold text-neutral-400 uppercase tracking-wider mb-6">CPU History (60 Seconds)</h2>
               <div className="h-64 w-full">
@@ -131,34 +95,65 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* 2. The Top Processes Table */}
-            <div className="bg-neutral-900 border border-neutral-800 rounded-xl shadow-lg overflow-hidden">
-              <div className="p-6 border-b border-neutral-800">
-                <h2 className="text-sm font-semibold text-neutral-400 uppercase tracking-wider">Top Processes (By CPU)</h2>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-neutral-950/50 text-neutral-400 text-sm border-b border-neutral-800">
-                      <th className="p-4 font-medium">PID</th>
-                      <th className="p-4 font-medium">Name</th>
-                      <th className="p-4 font-medium">User</th>
-                      <th className="p-4 font-medium text-right">CPU %</th>
-                      <th className="p-4 font-medium text-right">Memory (MB)</th>
-                    </tr>
-                  </thead>
-                  <tbody className="text-sm divide-y divide-neutral-800/50">
-                    {data.top_processes.map((proc) => (
-                      <tr key={proc.pid} className="hover:bg-neutral-800/20 transition-colors">
-                        <td className="p-4 text-neutral-500">{proc.pid}</td>
-                        <td className="p-4 font-medium text-neutral-200">{proc.name}</td>
-                        <td className="p-4 text-neutral-500">{proc.user || "-"}</td>
-                        <td className="p-4 text-right font-mono text-blue-400">{proc.cpu_percent.toFixed(1)}%</td>
-                        <td className="p-4 text-right font-mono text-purple-400">{proc.memory_mb.toFixed(1)}</td>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Processes Table */}
+              <div className="bg-neutral-900 border border-neutral-800 rounded-xl shadow-lg overflow-hidden">
+                <div className="p-6 border-b border-neutral-800">
+                  <h2 className="text-sm font-semibold text-neutral-400 uppercase tracking-wider">Top Processes</h2>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-neutral-950/50 text-neutral-400 text-sm border-b border-neutral-800">
+                        <th className="p-4 font-medium">PID</th>
+                        <th className="p-4 font-medium">Name</th>
+                        <th className="p-4 font-medium text-right">CPU %</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="text-sm divide-y divide-neutral-800/50">
+                      {data.top_processes.map((proc) => (
+                        <tr key={proc.pid} className="hover:bg-neutral-800/20 transition-colors">
+                          <td className="p-4 text-neutral-500">{proc.pid}</td>
+                          <td className="p-4 font-medium text-neutral-200 truncate max-w-[150px]">{proc.name}</td>
+                          <td className="p-4 text-right font-mono text-blue-400">{proc.cpu_percent.toFixed(1)}%</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Docker Containers Table */}
+              <div className="bg-neutral-900 border border-neutral-800 rounded-xl shadow-lg overflow-hidden">
+                <div className="p-6 border-b border-neutral-800">
+                  <h2 className="text-sm font-semibold text-neutral-400 uppercase tracking-wider">Active Containers</h2>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-neutral-950/50 text-neutral-400 text-sm border-b border-neutral-800">
+                        <th className="p-4 font-medium">Container ID</th>
+                        <th className="p-4 font-medium">Image Name</th>
+                        <th className="p-4 font-medium text-right">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="text-sm divide-y divide-neutral-800/50">
+                      {data.containers?.length > 0 ? (
+                        data.containers.map((container) => (
+                          <tr key={container.id} className="hover:bg-neutral-800/20 transition-colors">
+                            <td className="p-4 text-neutral-500 font-mono">{container.id}</td>
+                            <td className="p-4 font-medium text-neutral-200 truncate max-w-[150px]">{container.name}</td>
+                            <td className="p-4 text-right font-mono text-emerald-400 capitalize">{container.status}</td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={3} className="p-8 text-center text-neutral-500">No active Docker containers found.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
 
