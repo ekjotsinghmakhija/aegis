@@ -46,6 +46,12 @@ export default function Dashboard() {
     }
   };
 
+  const handleDockerAction = (id: string, action: string) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ action: `docker_${action}`, container_id: id }));
+    }
+  };
+
   return (
     <main className="min-h-screen bg-neutral-950 text-neutral-50 p-8 font-sans">
       <div className="max-w-5xl mx-auto">
@@ -57,7 +63,7 @@ export default function Dashboard() {
             <CpuChart history={history} />
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <ProcessTable processes={data.top_processes} onKill={handleKillProcess} />
-              <ContainerTable containers={data.containers} />
+              <ContainerTable containers={data.containers} onAction={handleDockerAction} />
             </div>
           </div>
         ) : (

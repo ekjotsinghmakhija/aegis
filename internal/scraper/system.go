@@ -99,7 +99,10 @@ func GetTelemetry() models.Payload {
 	}
 	topProcesses := procList[:topCount]
 
-	// 7. Construct Payload
+// 7. Fetch Docker Containers
+	dockerContainers := GetDockerContainers()
+
+	// 8. Construct Payload
 	return models.Payload{
 		Metadata: models.Metadata{
 			Hostname:      hostStat.Hostname,
@@ -121,6 +124,6 @@ func GetTelemetry() models.Payload {
 		Disks:        diskStats,
 		Networks:     netStats,
 		TopProcesses: topProcesses,
-		Containers:   []models.Container{}, // We will tackle Docker next
+		Containers:   dockerContainers, // The Docker module is now live!
 	}
 }

@@ -47,3 +47,23 @@ func GetDockerContainers() []models.Container {
 
 	return containerList
 }
+
+// PerformDockerAction executes start/stop/restart commands on a specific container
+func PerformDockerAction(containerID string, action string) {
+	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	if err != nil {
+		return
+	}
+	defer cli.Close()
+
+	ctx := context.Background()
+
+	switch action {
+	case "stop":
+		cli.ContainerStop(ctx, containerID, container.StopOptions{})
+	case "start":
+		cli.ContainerStart(ctx, containerID, container.StartOptions{})
+	case "restart":
+		cli.ContainerRestart(ctx, containerID, container.StopOptions{})
+	}
+}

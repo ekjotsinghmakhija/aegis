@@ -19,8 +19,9 @@ var upgrader = websocket.Upgrader{
 
 // ClientCommand represents incoming instructions from the UI
 type ClientCommand struct {
-	Action string `json:"action"`
-	PID    int    `json:"pid,omitempty"`
+	Action      string `json:"action"`
+	PID         int    `json:"pid,omitempty"`
+	ContainerID string `json:"container_id,omitempty"` // Added for Docker
 }
 
 func HandleConnections(w http.ResponseWriter, r *http.Request) {
@@ -33,7 +34,7 @@ func HandleConnections(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("New client connected from %s", r.RemoteAddr)
 
-	// --- THE NEW READ PUMP (Listens for UI commands) ---
+	// --- THE UPGRADED READ PUMP (Listens for UI commands) ---
 	go func() {
 		for {
 			_, message, err := ws.ReadMessage()
@@ -43,10 +44,16 @@ func HandleConnections(w http.ResponseWriter, r *http.Request) {
 
 			var cmd ClientCommand
 			if err := json.Unmarshal(message, &cmd); err == nil {
-				// Handle the Kill Process command
+				// Handle OS Processes
 				if cmd.Action == "kill_process" && cmd.PID > 0 {
 					log.Printf("Command Received: Kill PID %d", cmd.PID)
 					killProcess(cmd.PID)
+				}
+				// Handle Docker Containers
+				if (cmd.Action == "docker_start" || cmd.Action == "docker_stop" || cmd.Action == "docker_restart") && cmd.ContainerID != "" {
+					log.Printf("Command Received: %s on Container %s", cmd.Action, cmd.ContainerID)
+					// Strip the "docker_" prefix to pass just "start", "stop", or "restart"
+					scraper.PerformDockerAction(cmd.ContainerID, cmd.Action[7:])
 				}
 			}
 		}
