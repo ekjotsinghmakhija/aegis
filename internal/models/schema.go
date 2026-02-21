@@ -7,6 +7,7 @@ type Payload struct {
 	Metadata     Metadata    `json:"metadata"`
 	CPU          CPU         `json:"cpu"`
 	Memory       Memory      `json:"memory"`
+	GPUs         []GPU       `json:"gpus"` // Added GPU array
 	Disks        []Disk      `json:"disk"`
 	Networks     []Network   `json:"network"`
 	TopProcesses []Process   `json:"top_processes"`
@@ -64,4 +65,11 @@ type Container struct {
 	Status     string  `json:"status"`
 	CPUPercent float64 `json:"cpu_percent"`
 	MemoryMB   float64 `json:"memory_mb"`
+}
+
+type GPU struct {
+	Vendor        string  `json:"vendor"`
+	Model         string  `json:"model"`
+	MemoryTotalMB int64   `json:"memory_total_mb"`
+	Utilization   float64 `json:"utilization"`
 }

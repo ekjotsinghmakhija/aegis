@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings" // Added missing import
 	"time"
 
 	"github.com/ekjotsinghmakhija/aegis/internal/scraper"
@@ -21,7 +22,7 @@ var upgrader = websocket.Upgrader{
 type ClientCommand struct {
 	Action      string `json:"action"`
 	PID         int    `json:"pid,omitempty"`
-	ContainerID string `json:"container_id,omitempty"` // Added for Docker
+	ContainerID string `json:"container_id,omitempty"`
 }
 
 func HandleConnections(w http.ResponseWriter, r *http.Request) {
@@ -34,7 +35,7 @@ func HandleConnections(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("New client connected from %s", r.RemoteAddr)
 
-	// --- THE UPGRADED READ PUMP (Listens for UI commands) ---
+	// --- THE READ PUMP (Listens for UI commands) ---
 	go func() {
 		for {
 			_, message, err := ws.ReadMessage()
@@ -44,13 +45,13 @@ func HandleConnections(w http.ResponseWriter, r *http.Request) {
 
 			var cmd ClientCommand
 			if err := json.Unmarshal(message, &cmd); err == nil {
-				// Handle OS Processes
+				// Handle the Kill Process command
 				if cmd.Action == "kill_process" && cmd.PID > 0 {
 					log.Printf("Command Received: Kill PID %d", cmd.PID)
 					killProcess(cmd.PID)
 				}
 				// Handle Docker Containers
-				if (cmd.Action == "docker_start" || cmd.Action == "docker_stop" || cmd.Action == "docker_restart") && cmd.ContainerID != "" {
+				if strings.HasPrefix(cmd.Action, "docker_") && cmd.ContainerID != "" {
 					log.Printf("Command Received: %s on Container %s", cmd.Action, cmd.ContainerID)
 					// Strip the "docker_" prefix to pass just "start", "stop", or "restart"
 					scraper.PerformDockerAction(cmd.ContainerID, cmd.Action[7:])
@@ -59,7 +60,7 @@ func HandleConnections(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	// --- THE EXISTING WRITE PUMP (Streams telemetry) ---
+	// --- THE WRITE PUMP (Streams telemetry) ---
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
