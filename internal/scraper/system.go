@@ -1,12 +1,15 @@
 package scraper
 
 import (
+	"strings"
 	"time"
 
 	"github.com/ekjotsinghmakhija/aegis/internal/models"
 	"github.com/shirou/gopsutil/v3/cpu"
+	"github.com/shirou/gopsutil/v3/disk"
 	"github.com/shirou/gopsutil/v3/host"
 	"github.com/shirou/gopsutil/v3/mem"
+	"github.com/shirou/gopsutil/v3/net"
 )
 
 // GetTelemetry collects real-time system metrics and formats them into our Payload schema.
@@ -15,8 +18,6 @@ func GetTelemetry() models.Payload {
 	hostStat, _ := host.Info()
 
 	// 2. Fetch CPU Metrics
-	// We pass 'false' to get global usage, and 'true' to get per-core usage.
-	// The '0' duration means it calculates based on the last call (non-blocking).
 	cpuGlobal, _ := cpu.Percent(0, false)
 	cpuCores, _ := cpu.Percent(0, true)
 
@@ -29,7 +30,43 @@ func GetTelemetry() models.Payload {
 	vmStat, _ := mem.VirtualMemory()
 	swapStat, _ := mem.SwapMemory()
 
-	// 4. Construct the Payload
+	// 4. Fetch Disk Metrics
+	partitions, _ := disk.Partitions(false)
+	var diskStats []models.Disk
+	for _, p := range partitions {
+		// Ignore obscure pseudo-filesystems (like snap loop devices on Ubuntu)
+		if strings.HasPrefix(p.Mountpoint, "/snap") || strings.HasPrefix(p.Mountpoint, "/boot") {
+			continue
+		}
+
+		usage, err := disk.Usage(p.Mountpoint)
+		if err == nil {
+			diskStats = append(diskStats, models.Disk{
+				MountPoint:    p.Mountpoint,
+				TotalGB:       float64(usage.Total) / 1024 / 1024 / 1024,
+				UsedGB:        float64(usage.Used) / 1024 / 1024 / 1024,
+				ReadBytesSec:  0, // Note: IO/sec requires state tracking. We will add this in the polling loop.
+				WriteBytesSec: 0,
+			})
+		}
+	}
+
+	// 5. Fetch Network Metrics
+	netIO, _ := net.IOCounters(true)
+	var netStats []models.Network
+	for _, io := range netIO {
+		// Filter out loopback or dead interfaces
+		if io.BytesRecv > 0 || io.BytesSent > 0 {
+			netStats = append(netStats, models.Network{
+				Interface:         io.Name,
+				RxBytesSec:        int64(io.BytesRecv), // Temporarily storing raw total bytes
+				TxBytesSec:        int64(io.BytesSent),
+				ActiveConnections: 0,
+			})
+		}
+	}
+
+	// 6. Construct the Payload
 	return models.Payload{
 		Metadata: models.Metadata{
 			Hostname:      hostStat.Hostname,
@@ -41,21 +78,17 @@ func GetTelemetry() models.Payload {
 		CPU: models.CPU{
 			GlobalUsagePercent: globalUsage,
 			CoreUsage:          cpuCores,
-			// Note: Temperature and Power are highly hardware-dependent.
-			// We'll leave them at 0.0 for this iteration until we add sensor plugins.
 			TemperatureC:       0.0,
 			PowerDrawW:         0.0,
 		},
 		Memory: models.Memory{
-			// Convert bytes to Megabytes (MB)
 			TotalMB:     int64(vmStat.Total / 1024 / 1024),
 			UsedMB:      int64(vmStat.Used / 1024 / 1024),
 			AvailableMB: int64(vmStat.Available / 1024 / 1024),
 			SwapUsedMB:  int64(swapStat.Used / 1024 / 1024),
 		},
-		// Initialize empty arrays for the rest for now
-		Disks:        []models.Disk{},
-		Networks:     []models.Network{},
+		Disks:        diskStats,
+		Networks:     netStats,
 		TopProcesses: []models.Process{},
 		Containers:   []models.Container{},
 	}
