@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { TelemetryPayload, ChartData } from "../types/telemetry";
 import Header from "../components/Header";
 import MetricCards from "../components/MetricCards";
 import CpuChart from "../components/CpuChart";
@@ -10,92 +9,80 @@ import ProcessTable from "../components/ProcessTable";
 import ContainerTable from "../components/ContainerTable";
 
 export default function Dashboard() {
-  const [data, setData] = useState<TelemetryPayload | null>(null);
-  const [cpuHistory, setCpuHistory] = useState<ChartData[]>([]);
-  const [netHistory, setNetHistory] = useState<any[]>([]);
-  const [status, setStatus] = useState("Connecting...");
+  const [activeTab, setActiveTab] = useState<"live" | "history" | "rules">("live");
+  const [data, setData] = useState<any>(null);
+  const [history, setHistory] = useState<any[]>([]);
+  const [cpuHistory, setCpuHistory] = useState<any[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
 
-  // This must match the AEGIS_TOKEN set in your Go environment
-  const AEGIS_TOKEN = "mysecret123";
-
   useEffect(() => {
-    const ws = new WebSocket(`ws://localhost:8080/ws?token=${AEGIS_TOKEN}`);
+    // 1. WebSocket for Live Data
+    const ws = new WebSocket(`ws://localhost:8080/ws?token=mysecret123`);
     wsRef.current = ws;
-
-    ws.onopen = () => setStatus("Connected (Live)");
-    ws.onclose = () => setStatus("Disconnected - Retrying...");
-
-    ws.onmessage = (event) => {
-      const payload: TelemetryPayload = JSON.parse(event.data);
+    ws.onmessage = (e) => {
+      const payload = JSON.parse(e.data);
       setData(payload);
-
-      const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-
-      // Update CPU History
-      setCpuHistory(prev => [...prev, { time, cpu: payload.cpu.global_usage_percent }].slice(-60));
-
-      // Calculate Network Speeds (KB/s)
-      const rx = (payload.network?.reduce((a, b) => a + b.rx_bytes_sec, 0) || 0) / 1024;
-      const tx = (payload.network?.reduce((a, b) => a + b.tx_bytes_sec, 0) || 0) / 1024;
-      setNetHistory(prev => [...prev, { time, rx, tx }].slice(-60));
+      setCpuHistory(prev => [...prev, { time: new Date().toLocaleTimeString(), cpu: payload.cpu.global_usage_percent }].slice(-60));
     };
+
+    // 2. Fetch History on load
+    fetch("http://localhost:8080/api/history")
+      .then(res => res.json())
+      .then(data => setHistory(data));
 
     return () => ws.close();
   }, []);
 
-  const handleAction = (cmd: object) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify(cmd));
-    }
-  };
-
   return (
     <main className="min-h-screen bg-neutral-950 text-neutral-50 p-8">
       <div className="max-w-6xl mx-auto space-y-6">
-        <Header status={status} />
+        <Header status="Live" />
 
-        {data ? (
-          <>
+        {/* Navigation Tabs */}
+        <div className="flex gap-4 border-b border-neutral-800 pb-2">
+          {["live", "history", "rules"].map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab as any)}
+              className={`px-4 py-2 rounded-t-lg capitalize transition-colors ${activeTab === tab ? "bg-neutral-800 text-blue-400" : "text-neutral-500 hover:text-neutral-300"}`}
+            >
+              {tab}
+            </button>
+          ))}
+        </div>
+
+        {activeTab === "live" && data && (
+          <div className="space-y-6">
             <MetricCards data={data} />
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <CpuChart history={cpuHistory} />
-              <NetChart history={netHistory} />
+              <NetChart history={[]} /> {/* Implement history state similarly */}
             </div>
-
-            {/* Multi-Vendor GPU Section */}
-            {data.gpus?.length > 0 && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {data.gpus.map((gpu, idx) => (
-                  <div key={idx} className="bg-neutral-900 border border-neutral-800 rounded-xl p-6 shadow-lg">
-                    <h2 className="text-sm font-semibold text-neutral-400 uppercase tracking-wider mb-2">GPU: {gpu.vendor}</h2>
-                    <div className="text-xl font-bold text-emerald-400 mb-4">{gpu.model}</div>
-                    <div className="flex justify-between text-sm text-neutral-500">
-                      <span>Utilization</span>
-                      <span>{gpu.utilization}%</span>
-                    </div>
-                    <div className="w-full bg-neutral-800 rounded-full h-1.5 mt-2">
-                       <div className="bg-emerald-500 h-1.5 rounded-full" style={{ width: `${gpu.utilization}%` }}></div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <ProcessTable
-                processes={data.top_processes}
-                onKill={(pid) => handleAction({action: "kill_process", pid})}
-              />
-              <ContainerTable
-                containers={data.containers}
-                onAction={(id, action) => handleAction({action: `docker_${action}`, container_id: id})}
-              />
+              <ProcessTable processes={data.top_processes} onKill={() => {}} />
+              <ContainerTable containers={data.containers} onAction={() => {}} />
             </div>
-          </>
-        ) : (
-          <div className="text-center text-neutral-500 py-20 animate-pulse font-mono">
-            ESTABLISHING SECURE HANDSHAKE...
+          </div>
+        )}
+
+        {activeTab === "history" && (
+          <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-8 text-center">
+            <h2 className="text-xl font-bold mb-4 text-blue-400 underline">System Time-Travel</h2>
+            <div className="space-y-2 text-left max-w-md mx-auto">
+              {history.map((h, i) => (
+                <div key={i} className="flex justify-between border-b border-neutral-800 py-2 font-mono text-sm">
+                  <span className="text-neutral-500">{h.time}</span>
+                  <span className="text-blue-400">CPU: {h.cpu}%</span>
+                  <span className="text-purple-400">MEM: {h.mem}MB</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {activeTab === "rules" && (
+          <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-8 text-center text-neutral-500">
+            Alert Rules Management (Coming in v3.1)
           </div>
         )}
       </div>
